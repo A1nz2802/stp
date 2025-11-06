@@ -1,0 +1,76 @@
+/**
+ * @file stp.h
+ * @brief Defines the data structures and function prototypes for a Spanning Tree Protocol (STP) simulator.
+ */
+
+#include <cstdint>
+#include <stdint.h>
+
+// --- Constants ---
+#define MAX_PORTS 16   ///< Maximum number of ports a switch can have.
+#define NUM_SWITCHES 3 ///< Number of switches to create in the topology.
+
+// ---------- Enums ----------
+
+/** @brief Defines the operational states of a port according to STP. */
+enum PortState {
+    BLOCKING,   ///< Port discards frames, does not learn MACs, but listens to BPDUs.
+    LISTENING,  ///< Port discards frames, does not learn MACs, but processes BPDUs.
+    LEARNING,   ///< Port discards frames, but learns MAC addresses.
+    FORWARDING, ///< Port forwards frames, learns MACs, and is fully operational.
+    DISABLED    ///< Port is administratively shut down.
+};
+
+/** @brief Defines the calculated role of a port in the STP topology. */
+enum PortRole {
+    ROOT,          ///< The port with the best (lowest cost) path to the Root Bridge.
+    DESIGNATED,    ///< The port responsible for sending BPDUs and traffic onto a network segment.
+    NON_DESIGNATED ///< A blocked port that is neither Root nor Designated (redundant link).
+};
+
+// ---------- Structs ----------
+
+/**
+ * @brief Represents a Bridge Protocol Data Unit (BPDU).
+ * This is the message packet switches use to communicate STP information.
+ */
+struct Bpdu {
+    uint64_t root_id;        ///< The BID of the switch believed to be the Root Bridge.
+    uint32_t root_path_cost; ///< The total accumulated cost to reach the Root Bridge.
+    uint64_t bridge_id;      ///< The BID of the switch sending this BPDU.
+    uint16_t port_id;        ///< The Port ID of the port sending this BPDU.
+
+    // temporized fields
+    uint16_t message_age;   ///< Time elapsed since the Root originated this info.
+    uint16_t max_age;       ///< Time this BPDU should be stored before being discarded.
+    uint16_t hello_time;    ///< The interval between BPDUs (dictated by the Root).
+    uint16_t forward_delay; ///< The time to wait in LISTENING and LEARNING states.
+};
+
+/**
+ * @brief Represents a physical port on a switch.
+ */
+struct Port {
+    uint16_t port_priority;          ///< Port priority (default 128), used for tie-breaking.
+    int port_number;                 ///< Physical identifier of the port (e.g., 1, 2, 3...).
+    uint16_t port_id;                ///< 16-bit combination of port priority and number.
+    int port_cost;                   ///< Link cost (e.g., 19 for 100Mbps, 4 for 1Gbps).
+    enum PortState state;            ///< Current operational state (BLOCKING, FORWARDING, etc.).
+    enum PortRole role;              ///< Calculated role in the tree (ROOT, DESIGNATED, etc.).
+    struct Bpdu stored_bpdu;         ///< The "best" BPDU this port has ever received.
+    struct Switch *connected_switch; ///< Pointer to the neighbor switch (for simulation only).
+};
+
+struct Switch {
+    uint16_t bridge_priority;     ///< Configurable priority (default 32768) for Root election.
+    uint64_t mac_address;         ///< Unique 6-byte hardware (MAC) address of the switch.
+    struct Bpdu my_bpdu;          ///< The BPDU template this switch originates if it's Root.
+    struct Port ports[MAX_PORTS]; ///< Array of all ports on this switch.
+    int root_port_index;          ///< Index in the 'ports' array for the Root Port (-1 = none).
+};
+
+struct Topology {
+    struct Switch switches[NUM_SWITCHES];
+};
+
+struct Topology init_topology(void);
