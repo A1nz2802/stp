@@ -48,6 +48,14 @@ struct Bpdu {
 
 /**
  * @brief Represents a physical port on a switch.
+ *
+ * *** Link Speed  --- Cost ***
+ * ----------------------------
+ * ***  10 Gbps    ---  2   ***
+ * ***   1 Gbps    ---  4   ***
+ * *** 100 Mbps    ---  19  ***
+ * ***  10 Mbps    ---  100 ***
+ * ///
  */
 struct Port {
     uint16_t port_priority;          ///< Port priority (default 128), used for tie-breaking.
@@ -78,11 +86,30 @@ struct Topology {
     struct Switch switches[NUM_SWITCHES]; ///< Array of all switches in the simulation.
 };
 
+/**
+ * @brief Connects the ports of the switches in the topology.
+ * @details This function creates a bi-directional link that the simulation
+ * loop will use to pass BPDUs between switches and creates a 3-switch triangle topology.
+ *
+ * @param topology A pointer to the Topology struct to be modified.
+ */
+void connect_topology(struct Topology *topology);
+
+/**
+ * @brief Creates and initializes the simulation's network topology.
+ * @details This function represents the "power-on" state of the network,
+ * *before* any STP convergence has occurred. It sets up the default
+ * values for each switch based on real-world hardware.
+ *
+ * @return A `struct Topology` (by value) containing the initialized switches.
+ */
 struct Topology init_topology(void);
 
 /**
- * @brief Calculates the 64-bit Bridge ID (BID) from its components.
- * @param sw Pointer ti the switch.
+ * @brief The BID is a 64-bit value used to uniquely identify a switch and determine the
+ * Root Bridge. It's a composite of the 16-bit bridge priority and the 48-bit MAC address.
+ *
+ * @param sw Pointer to the switch.
  * @return The 64-bit calculated BID.
  */
 uint64_t get_switch_bid(struct Switch *sw);
