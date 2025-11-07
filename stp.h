@@ -3,11 +3,12 @@
  * @brief Defines the data structures and function prototypes for a Spanning Tree Protocol (STP) simulator.
  */
 
-#include <stdint.h>
+#include <inttypes.h>
 
 // --- Constants ---
-#define MAX_PORTS 16   ///< Maximum number of ports a switch can have.
-#define NUM_SWITCHES 3 ///< Number of switches to create in the topology.
+#define MAX_PORTS 16     ///< Maximum number of ports a switch can have.
+#define NUM_SWITCHES 3   ///< Number of switches to create in the topology.
+#define MAX_BPDU_QUEUE 8 ///< Max BPDUs a port can hold in its inbox per tick.
 
 // ---------- Enums ----------
 
@@ -49,23 +50,25 @@ struct Bpdu {
 /**
  * @brief Represents a physical port on a switch.
  *
- * *** Link Speed  --- Cost ***
- * ----------------------------
- * ***  10 Gbps    ---  2   ***
- * ***   1 Gbps    ---  4   ***
- * *** 100 Mbps    ---  19  ***
- * ***  10 Mbps    ---  100 ***
- * ///
+ * ///  Link Speed   | Cost   ///
+ * /// --------------|------- ///
+ * ///   10  Gbps    |  2     ///
+ * ///   1   Gbps    |  4     ///
+ * ///   100 Mbps    |  19    ///
+ * ///   10  Mbps    |  100   ///
  */
 struct Port {
-    uint16_t port_priority;          ///< Port priority (default 128), used for tie-breaking.
-    int port_number;                 ///< Physical identifier of the port (e.g., 1, 2, 3...).
-    uint16_t port_id;                ///< 16-bit combination of port priority and number.
-    int port_cost;                   ///< Link cost (e.g., 19 for 100Mbps, 4 for 1Gbps).
-    enum PortState state;            ///< Current operational state (BLOCKING, FORWARDING, etc.).
-    enum PortRole role;              ///< Calculated role in the tree (ROOT, DESIGNATED, etc.).
-    struct Bpdu stored_bpdu;         ///< The "best" BPDU this port has ever received.
-    struct Switch *connected_switch; ///< Pointer to the neighbor switch (for simulation only).
+    uint16_t port_priority;                 ///< Port priority (default 128), used for tie-breaking.
+    int port_number;                        ///< Physical identifier of the port (e.g., 1, 2, 3...).
+    uint16_t port_id;                       ///< 16-bit combination of port priority and number.
+    int port_cost;                          ///< Link cost (e.g., 19 for 100Mbps, 4 for 1Gbps).
+    enum PortState state;                   ///< Current operational state (BLOCKING, FORWARDING, etc.).
+    enum PortRole role;                     ///< Calculated role in the tree (ROOT, DESIGNATED, etc.).
+    struct Bpdu stored_bpdu;                ///< The "best" BPDU this port has ever received.
+    struct Switch *connected_switch;        ///< Pointer to the neighbor switch (for simulation only).
+    struct Bpdu bpdu_inbox[MAX_BPDU_QUEUE]; ///< The inbox for BPDUs received *during* the current simulation tick.
+    int inbox_count;                        ///< The number of BPDUs currently waiting in the bpdu_inbox.
+    struct Port *connected_port;            ///< Direct pointer to the neighbor's port.
 };
 
 /**
@@ -113,3 +116,34 @@ struct Topology init_topology(void);
  * @return The 64-bit calculated BID.
  */
 uint64_t get_switch_bid(struct Switch *sw);
+
+/**
+ * @brief Delivers a new BPDU to a port's inbox.
+ * This simulates the physical reception of a BPDU frame.
+ * @param port The port that is receiving the BPDU.
+ * @param bpdu The BPDU being delivered.
+ */
+void deliver_bpdu_to_port(struct Port *port, struct Bpdu *bpdu);
+
+/**
+ * @brief Clears all BPDUs from a port's inbox.
+ * Called after all BPDUs for a tick have been processed.
+ * @param port The port whose inbox will be cleared.
+ */
+void clear_port_inbox(struct Port *port);
+
+/**
+ * @brief Sends a BPDU out of a specific port.
+ * This function finds the connected neighbor port and
+ * calls deliver_bpdu_to_port() on it.
+ * @param port The *sending* port.
+ * @param bpdu The BPDU to send.
+ */
+void send_bpdu_on_port(struct Port *port, struct Bpdu *bpdu);
+
+/**
+ * @brief Orchestrator function for the "send" phase of a simulation tick.
+ * Loops through all switches and ports, sending BPDUs where appropriate.
+ * @param topo A pointer to the entire network topology.
+ */
+void send_all_bpdus(struct Topology *topo);
