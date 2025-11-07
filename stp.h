@@ -3,7 +3,6 @@
  * @brief Defines the data structures and function prototypes for a Spanning Tree Protocol (STP) simulator.
  */
 
-#include <cstdint>
 #include <stdint.h>
 
 // --- Constants ---
@@ -61,6 +60,9 @@ struct Port {
     struct Switch *connected_switch; ///< Pointer to the neighbor switch (for simulation only).
 };
 
+/**
+ * @brief Represents a network Switch (or Bridge) running STP.
+ */
 struct Switch {
     uint16_t bridge_priority;     ///< Configurable priority (default 32768) for Root election.
     uint64_t mac_address;         ///< Unique 6-byte hardware (MAC) address of the switch.
@@ -69,8 +71,18 @@ struct Switch {
     int root_port_index;          ///< Index in the 'ports' array for the Root Port (-1 = none).
 };
 
+/**
+ * @brief Holds the entire simulated network topology.
+ */
 struct Topology {
-    struct Switch switches[NUM_SWITCHES];
+    struct Switch switches[NUM_SWITCHES]; ///< Array of all switches in the simulation.
 };
 
 struct Topology init_topology(void);
+
+/**
+ * @brief Calculates the 64-bit Bridge ID (BID) from its components.
+ * @param sw Pointer ti the switch.
+ * @return The 64-bit calculated BID.
+ */
+uint64_t get_switch_bid(struct Switch *sw);
