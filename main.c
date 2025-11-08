@@ -28,7 +28,7 @@ int main() {
         elect_all_port_roles(&network);
 
         // 4. Update Port States (Move from BLOCKING -> LISTENING, etc.)
-        // update_all_port_states(&network);
+        update_all_port_states(&network);
 
         sleep(2);
     }

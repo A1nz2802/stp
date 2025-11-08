@@ -12,7 +12,9 @@
 
 #define BPDU_IS_BETTER -1 ///< The new BPDU is better
 #define BPDU_IS_EQUAL 0   ///< The BPDUs are identical
-#define BPDU_IS_WORST 1   ///< The new BPDU is worse
+#define BPDU_IS_WORST 1   ///< The new BPDU is worst
+
+#define FORWARD_DELAY_SECONDS 15 ///< Time to wait in LISTENING and LEARNING
 
 // ---------- Enums ----------
 
@@ -73,6 +75,7 @@ struct Port {
     struct Bpdu bpdu_inbox[MAX_BPDU_QUEUE]; ///< The inbox for BPDUs received *during* the current simulation tick.
     int inbox_count;                        ///< The number of BPDUs currently waiting in the bpdu_inbox.
     struct Port *connected_port;            ///< Direct pointer to the neighbor's port.
+    int state_timer;                        ///< A countdown timer (in seconds) for LISTENING and LEARNING states.
 };
 
 /**
@@ -176,3 +179,12 @@ void process_all_bpdus(struct Topology *topology);
  * @param topology A pointer to the entire network topology.
  */
 void elect_all_port_roles(struct Topology *topology);
+
+/**
+ * @brief Orchestrator for the "state transition" phase of a simulation tick.
+ * This function checks the 'role' of each port (decided by elect_all_port_roles)
+ * and updates its 'state' (BLOCKING, LISTENING, etc.) accordingly,
+ * managing the 15-second Forward Delay timers.
+ * @param topology A pointer to the entire network topology.
+ */
+void update_all_port_states(struct Topology *topology);

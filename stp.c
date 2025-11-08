@@ -324,3 +324,61 @@ void elect_all_port_roles(struct Topology *topo) {
         }
     }
 }
+
+void update_all_port_states(struct Topology *topology) {
+    printf("\n--- Update Port States Phase ---\n");
+
+    for (int i = 0; i < NUM_SWITCHES; i++) {
+        struct Switch *sw = &topology->switches[i];
+
+        for (int p_idx = 0; p_idx < MAX_PORTS; p_idx++) {
+            struct Port *port = &sw->ports[p_idx];
+
+            // --- Logic for ROOT and DESIGNATED ports ---
+            // These ports want to move *towards* FORWARDING
+            if (port->role == ROOT || port->role == DESIGNATED) {
+
+                if (port->state == BLOCKING) {
+                    // It's a new Root/Designated port. Start the transition.
+                    port->state = LISTENING;
+                    port->state_timer = FORWARD_DELAY_SECONDS;
+                    printf("[STATE] S-%" PRIx64 " Port-%d -> LISTENING (15s)\n",
+                           get_switch_bid(sw), port->port_number);
+                } else if (port->state == LISTENING) {
+                    // It's in the Listening state. Decrement timer.
+                    port->state_timer--;
+                    if (port->state_timer <= 0) {
+                        port->state = LEARNING;
+                        port->state_timer = FORWARD_DELAY_SECONDS;
+                        printf("[STATE] S-%" PRIx64 " Port-%d -> LEARNING (15s)\n",
+                               get_switch_bid(sw), port->port_number);
+                    }
+                } else if (port->state == LEARNING) {
+                    // It's in the Learning state. Decrement timer.
+                    port->state_timer--;
+                    if (port->state_timer <= 0) {
+                        port->state = FORWARDING;
+                        printf("[STATE] S-%" PRIx64 " Port-%d -> FORWARDING (OPEN!)\n",
+                               get_switch_bid(sw), port->port_number);
+                    }
+                }
+                // If state is FORWARDING, do nothing. It's stable.
+
+            }
+
+            // --- Logic for NON_DESIGNATED ports ---
+            // These ports must be *blocked*
+            else if (port->role == NON_DESIGNATED) {
+
+                if (port->state != BLOCKING) {
+                    // This port was previously open, but its role is now Blocking.
+                    // Shut it down immediately. No timers needed.
+                    printf("  [STATE] S-%" PRIx64 " Port-%d -> BLOCKING (Link down)\n",
+                           get_switch_bid(sw), port->port_number);
+                    port->state = BLOCKING;
+                    port->state_timer = 0; // Reset timer
+                }
+            }
+        }
+    }
+}
