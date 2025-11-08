@@ -88,8 +88,8 @@ void connect_topology(struct Topology *topology) {
     topology->switches[0].ports[1].connected_switch = &topology->switches[2];
 }
 
-void run_simulation_tick(struct Topology topology) {
-}
+// void run_simulation_tick(struct Topology topology) {
+// }
 
 void deliver_bpdu_to_port(struct Port *port, struct Bpdu *bpdu) {
     // Safety check: Is the inbox full?
@@ -153,6 +153,172 @@ void send_all_bpdus(struct Topology *topology) {
 
                     // Send this switch's self-generated BPDU
                     send_bpdu_on_port(port, &sw->my_bpdu);
+                }
+            }
+        }
+    }
+}
+
+int compare_bpdus(struct Bpdu *new_bpdu, struct Bpdu *stored_bpdu) {
+    // 1. Lowest Root ID wins
+    if (new_bpdu->root_id < stored_bpdu->root_id)
+        return BPDU_IS_BETTER;
+    if (new_bpdu->root_id > stored_bpdu->root_id)
+        return BPDU_IS_WORST;
+
+    // 2. (Root IDs are equal) Lowest Root Path Cost wins
+    if (new_bpdu->root_path_cost < stored_bpdu->root_path_cost)
+        return BPDU_IS_BETTER;
+    if (new_bpdu->root_path_cost > stored_bpdu->root_path_cost)
+        return BPDU_IS_WORST;
+
+    // 3. (Costs are equal) Lowest Sender Bridge ID wins
+    if (new_bpdu->bridge_id < stored_bpdu->bridge_id)
+        return BPDU_IS_BETTER;
+    if (new_bpdu->bridge_id > stored_bpdu->bridge_id)
+        return BPDU_IS_WORST;
+
+    // 4. (Sender BIDs are equal) Lowest Sender Port ID wins
+    if (new_bpdu->port_id < stored_bpdu->port_id)
+        return BPDU_IS_BETTER;
+    if (new_bpdu->port_id > stored_bpdu->port_id)
+        return BPDU_IS_WORST;
+
+    // Everything is identical
+    return BPDU_IS_EQUAL;
+}
+
+void process_all_bpdus(struct Topology *topology) {
+    printf("\n--- Process BPDUs Phase ---\n");
+
+    // Loop through every switch
+    for (int i = 0; i < NUM_SWITCHES; i++) {
+        struct Switch *sw = &topology->switches[i];
+
+        // Loop through every port on that switch
+        for (int p_idx = 0; p_idx < MAX_PORTS; p_idx++) {
+            struct Port *port = &sw->ports[p_idx];
+
+            // Skip if this port's inbox is empty
+            if (port->inbox_count == 0) {
+                continue;
+            }
+
+            // Loop through all BPDUs in this port's inbox
+            for (int b_idx = 0; b_idx < port->inbox_count; b_idx++) {
+                struct Bpdu *received_bpdu = &port->bpdu_inbox[b_idx];
+
+                // Compare the new BPDU with the "best" one this port has ever seen
+                int comparison = compare_bpdus(received_bpdu, &port->stored_bpdu);
+
+                if (comparison == BPDU_IS_BETTER) {
+                    // --- User-requested Debug Message ---
+                    printf("[RX] Switch S-%" PRIx64 " Port-%d received a SUPERIOR BPDU!\n",
+                           get_switch_bid(sw),
+                           port->port_number);
+
+                    // This new BPDU is better! Save it.
+                    port->stored_bpdu = *received_bpdu;
+                }
+            }
+
+            // After processing all BPDUs in the inbox, clear it for the next tick.
+            clear_port_inbox(port);
+        }
+    }
+}
+
+void elect_all_port_roles(struct Topology *topo) {
+    printf("\n--- Elect Port Roles Phase ---\n");
+
+    for (int i = 0; i < NUM_SWITCHES; i++) {
+        struct Switch *sw = &topo->switches[i];
+        uint64_t my_bid = get_switch_bid(sw);
+
+        // --- Step 1: Find the best BPDU this switch knows about ---
+        // We start by assuming our *own* BPDU is the best.
+        struct Bpdu *best_bpdu = &sw->my_bpdu;
+        int root_port_index = -1; // -1 means "no Root Port" (I am the Root)
+
+        // Now, loop through all ports and compare their stored BPDUs
+        for (int p_idx = 0; p_idx < MAX_PORTS; p_idx++) {
+            struct Port *port = &sw->ports[p_idx];
+            if (port->connected_port == NULL) {
+                continue; // Skip ports that aren't plugged in
+            }
+
+            // Is the BPDU stored on this port better than the best one we've seen so far?
+            if (compare_bpdus(&port->stored_bpdu, best_bpdu) == BPDU_IS_BETTER) {
+                // Yes! This BPDU is our new best.
+                best_bpdu = &port->stored_bpdu;
+                root_port_index = p_idx; // This port is our new candidate for Root Port
+            }
+        }
+
+        // --- Step 2: Make decisions based on the best BPDU found ---
+
+        if (root_port_index == -1) {
+            // --- DECISION: I AM THE ROOT BRIDGE ---
+            // My own BPDU was better than any I received.
+            // This is the "Elected Root" state.
+
+            if (sw->root_port_index != -1) {
+                // This is the first tick we've *become* the Root
+                printf("  [ELECTION] S-%" PRIx64 " has decided IT IS THE ROOT.\n", my_bid);
+            }
+            sw->root_port_index = -1; // I don't have a Root Port
+
+            // All my ports must be DESIGNATED ports
+            for (int p_idx = 0; p_idx < MAX_PORTS; p_idx++) {
+                sw->ports[p_idx].role = DESIGNATED;
+            }
+
+        } else {
+            // --- DECISION: I AM A NON-ROOT BRIDGE ---
+            // A BPDU from port `root_port_index` was superior to mine.
+
+            struct Port *rp = &sw->ports[root_port_index];
+            rp->role = ROOT; // Set this port's role to ROOT
+
+            if (sw->root_port_index != root_port_index) {
+                // This is the first tick we've chosen this port
+                printf("  [ELECTION] S-%" PRIx64 " has elected Port-%d as its ROOT PORT.\n",
+                       my_bid, rp->port_number);
+            }
+            sw->root_port_index = root_port_index;
+
+            // --- Step 3: "SURRENDER" - Update my own BPDU template ---
+            // This is the CRUCIAL step you identified.
+            // We stop advertising ourselves as the Root.
+            sw->my_bpdu.root_id = rp->stored_bpdu.root_id;
+            // Our *new* cost is the Root's cost PLUS our port's cost
+            sw->my_bpdu.root_path_cost = rp->stored_bpdu.root_path_cost + rp->port_cost;
+            sw->my_bpdu.bridge_id = my_bid; // We are still the sender
+
+            // --- Step 4: Decide roles for all *other* ports ---
+            for (int p_idx = 0; p_idx < MAX_PORTS; p_idx++) {
+                if (p_idx == sw->root_port_index) {
+                    continue; // Skip the Root Port
+                }
+
+                struct Port *port = &sw->ports[p_idx];
+                if (port->connected_port == NULL) {
+                    continue; // Skip disconnected ports
+                }
+
+                // Is my (new, updated) BPDU superior to what this port is receiving?
+                int result = compare_bpdus(&sw->my_bpdu, &port->stored_bpdu);
+
+                if (result == BPDU_IS_BETTER) {
+                    // Yes. I win this segment. My port is DESIGNATED.
+                    port->role = DESIGNATED;
+                } else {
+                    // No. I lose this segment. My port must be NON-DESIGNATED (Blocking).
+                    if (port->role != NON_DESIGNATED) {
+                        printf("  [ELECTION] S-%" PRIx64 " setting Port-%d to BLOCKING (Non-Designated)\n",
+                               my_bid, port->port_number);
+                        port->role = NON_DESIGNATED;
+                    }
                 }
             }
         }

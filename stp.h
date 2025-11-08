@@ -10,6 +10,10 @@
 #define NUM_SWITCHES 3   ///< Number of switches to create in the topology.
 #define MAX_BPDU_QUEUE 8 ///< Max BPDUs a port can hold in its inbox per tick.
 
+#define BPDU_IS_BETTER -1 ///< The new BPDU is better
+#define BPDU_IS_EQUAL 0   ///< The BPDUs are identical
+#define BPDU_IS_WORST 1   ///< The new BPDU is worse
+
 // ---------- Enums ----------
 
 /** @brief Defines the operational states of a port according to STP. */
@@ -143,7 +147,32 @@ void send_bpdu_on_port(struct Port *port, struct Bpdu *bpdu);
 
 /**
  * @brief Orchestrator function for the "send" phase of a simulation tick.
- * Loops through all switches and ports, sending BPDUs where appropriate.
- * @param topo A pointer to the entire network topology.
+ * @param topology A pointer to the entire network topology.
  */
-void send_all_bpdus(struct Topology *topo);
+void send_all_bpdus(struct Topology *topology);
+
+/**
+ * @brief Compares two BPDUs to determine which is superior (better).
+ * Follows the 4-step STP comparison logic.
+ * @param new_bpdu The new, incoming BPDU.
+ * @param stored_bpdu The port's currently stored "best" BPDU.
+ * @return BPDU_IS_BETTER (-1), BPDU_IS_EQUAL (0), or BPDU_IS_WORST (1).
+ */
+int compare_bpdus(struct Bpdu *new_bpdu, struct Bpdu *stored_bpdu);
+
+/**
+ * @brief Orchestrator for the "process" phase of a simulation tick.
+ * Loops through all ports, reads their inboxes, compares incoming BPDUs
+ * to the stored BPDU, and updates the stored BPDU if a better one is found.
+ * @param topology A pointer to the entire network topology.
+ */
+void process_all_bpdus(struct Topology *topology);
+
+/**
+ * @brief Orchestrator for the "election" phase of a simulation tick.
+ * This function is the "brain" of STP. It loops through all switches
+ * and makes them re-evaluate their role (Root or Non-Root),
+ * elect their Root Port, and elect their Designated/Non-Designated ports.
+ * @param topology A pointer to the entire network topology.
+ */
+void elect_all_port_roles(struct Topology *topology);
