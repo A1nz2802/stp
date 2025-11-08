@@ -2,6 +2,39 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+
+// Helper function to convert state enum to string
+const char *get_state_string(enum PortState state) {
+    switch (state) {
+    case BLOCKING:
+        return "BLOCKING";
+    case LISTENING:
+        return "LISTENING";
+    case LEARNING:
+        return "LEARNING";
+    case FORWARDING:
+        return "FORWARDING";
+    case DISABLED:
+        return "DISABLED";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+// Helper function to convert role enum to string
+const char *get_role_string(enum PortRole role) {
+    switch (role) {
+    case ROOT:
+        return "Root";
+    case DESIGNATED:
+        return "Designated";
+    case NON_DESIGNATED:
+        return "Blocking";
+    default:
+        return "Unknown";
+    }
+}
+
 /**
  * @brief Calculates the 64-bit Bridge ID (BID) from its components.
  * * @details The BID is a 64-bit value used to uniquely identify a switch and
@@ -334,6 +367,11 @@ void update_all_port_states(struct Topology *topology) {
         for (int p_idx = 0; p_idx < MAX_PORTS; p_idx++) {
             struct Port *port = &sw->ports[p_idx];
 
+            // If this port isn't "plugged in", skip all logic for it.
+            if (port->connected_port == NULL) {
+                continue; // Skip to the next port
+            }
+
             // --- Logic for ROOT and DESIGNATED ports ---
             // These ports want to move *towards* FORWARDING
             if (port->role == ROOT || port->role == DESIGNATED) {
@@ -381,4 +419,45 @@ void update_all_port_states(struct Topology *topology) {
             }
         }
     }
+}
+
+void print_network_status(struct Topology *topology) {
+    printf("\n--- NETWORK STATUS ---\n");
+
+    for (int i = 0; i < NUM_SWITCHES; i++) {
+        struct Switch *sw = &topology->switches[i];
+        uint64_t my_bid = get_switch_bid(sw);
+
+        printf("Switch S-%" PRIx64 " (Prio: %u)\n", my_bid, sw->bridge_priority);
+
+        // Check if this switch is the Root
+        if (sw->my_bpdu.root_id == my_bid) {
+            printf("  ROLE: **ROOT BRIDGE**\n");
+        } else {
+            printf("  ROLE: Non-Root Bridge\n");
+            printf("  -> Believes Root is S-%" PRIx64 "\n", sw->my_bpdu.root_id);
+        }
+
+        // Print status of all connected ports
+        for (int p_idx = 0; p_idx < MAX_PORTS; p_idx++) {
+            struct Port *port = &sw->ports[p_idx];
+            if (port->connected_port == NULL) {
+                continue; // Skip unused/unplugged ports
+            }
+
+            printf("    Port %d: [Role: %-10s] [State: %-10s]",
+                   port->port_number,
+                   get_role_string(port->role),
+                   get_state_string(port->state));
+
+            // Print timer if it's active
+            if (port->state == LISTENING || port->state == LEARNING) {
+                printf(" (Timer: %2ds left)", port->state_timer);
+            }
+            printf("\n");
+        }
+    }
+
+    // THIS IS KEY: Force printf to empty its buffer and print to console NOW
+    fflush(stdout);
 }

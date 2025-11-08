@@ -15,22 +15,20 @@ int main() {
 
     printf("Created and connected %d switches. Starting simulation...\n", NUM_SWITCHES);
 
-    // 3. The Simulation Engine Loop
+    int tick_count = 1;
+
+    // The Simulation Engine Loop
     while (1) {
+        printf("\n=================== TICK %d ===================\n", tick_count);
 
-        // 1. Send all BPDUs (Puts them in the inboxes)
         send_all_bpdus(&network);
-
-        // 2. Process all BPDUs (Reads inboxes, compares, stores best)
-        process_all_bpdus(&network); // <-- ¡ACABAMOS DE AÑADIR ESTA!
-
-        // 3. Elect Port Roles (Run the STP algorithm)
+        process_all_bpdus(&network);
         elect_all_port_roles(&network);
-
-        // 4. Update Port States (Move from BLOCKING -> LISTENING, etc.)
         update_all_port_states(&network);
+        print_network_status(&network);
 
-        sleep(2);
+        sleep(1);
+        tick_count++;
     }
 
     return 0;

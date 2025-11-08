@@ -188,3 +188,9 @@ void elect_all_port_roles(struct Topology *topology);
  * @param topology A pointer to the entire network topology.
  */
 void update_all_port_states(struct Topology *topology);
+
+/**
+ * @brief Prints a "snapshot" of the entire network's current state.
+ * @param topology A pointer to the entire network topology.
+ */
+void print_network_status(struct Topology *topology);
